@@ -2,6 +2,7 @@
 **/__pycache__
 **/outputs
 **/model_dump
+**/checkpoint
 
 **/*.out
 **/*.json
