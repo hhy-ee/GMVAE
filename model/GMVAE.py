@@ -14,6 +14,7 @@ from networks.GMVAENetworks import *
 from losses.LossFunctions import *
 from metrics.Metrics import *
 import matplotlib.pyplot as plt
+from sklearn.cluster import MiniBatchKMeans
 
 class GMVAE:
 
@@ -51,7 +52,6 @@ class GMVAE:
     if self.cuda:
       self.network = self.network.cuda() 
   
-
   def train(self, train_loader, val_loader):
     """Train the model
 
@@ -63,25 +63,25 @@ class GMVAE:
         output: (dict) contains the history of train/val loss
     """
     optimizer = optim.Adam(self.network.parameters(), lr=self.learning_rate)
-    train_history_acc, val_history_acc = [], []
-    train_history_nmi, val_history_nmi = [], []
+    val_history_acc, val_history_nmi = [], []
 
     for epoch in range(1, self.num_epochs + 1):
-      train_loss, train_rec, train_gauss, train_cat, train_acc, train_nmi = self.train_epoch(optimizer, train_loader)
-      val_loss, val_rec, val_gauss, val_cat, val_acc, val_nmi = self.test(val_loader, True)
-
+      train_loss, train_rec, train_gauss, train_cat = self.train_epoch(optimizer, train_loader)
+      if epoch % 20 == 0:
+        torch.save(self.network.state_dict(), ('./checkpoint/gmvae/gmvae_e%d_w%.3f.pkl' % (epoch, self.w_gauss)))
+        val_loss, val_rec, val_gauss, val_cat, val_psnr, val_acc, val_nmi = self.test(val_loader, True)
+        if self.verbose == 1:
+          print("Valid - REC: %.5lf;  Gauss: %.5lf;  Cat: %.5lf;" % \
+              (val_rec, val_gauss, val_cat))
+          print("PSNR=Val: %.5lf; Accuracy=Val: %.5lf; NMI=Val: %.5lf; Total Loss=Train: %.5lf; Val: %.5lf" % \
+              (val_psnr, val_acc, val_nmi, train_loss, val_loss))
+          val_history_acc.append(val_acc)
+          val_history_nmi.append(val_nmi)
       # if verbose then print specific information about training
       if self.verbose == 1:
         print("(Epoch %d / %d)" % (epoch, self.num_epochs) )
         print("Train - REC: %.5lf;  Gauss: %.5lf;  Cat: %.5lf;" % \
               (train_rec, train_gauss, train_cat))
-        print("Valid - REC: %.5lf;  Gauss: %.5lf;  Cat: %.5lf;" % \
-              (val_rec, val_gauss, val_cat))
-        print("Accuracy=Train: %.5lf; Val: %.5lf   NMI=Train: %.5lf; Val: %.5lf   Total Loss=Train: %.5lf; Val: %.5lf" % \
-              (train_acc, val_acc, train_nmi, val_nmi, train_loss, val_loss))
-      else:
-        print('(Epoch %d / %d) Train_Loss: %.3lf; Val_Loss: %.3lf   Train_ACC: %.3lf; Val_ACC: %.3lf   Train_NMI: %.3lf; Val_NMI: %.3lf' % \
-              (epoch, self.num_epochs, train_loss, val_loss, train_acc, val_acc, train_nmi, val_nmi))
 
       # decay gumbel temperature
       if self.decay_temp == 1:
@@ -89,14 +89,9 @@ class GMVAE:
         if self.verbose == 1:
           print("Gumbel Temperature: %.3lf" % self.gumbel_temp)
 
-      train_history_acc.append(train_acc)
-      val_history_acc.append(val_acc)
-      train_history_nmi.append(train_nmi)
-      val_history_nmi.append(val_nmi)
-    return {'train_history_nmi' : train_history_nmi, 'val_history_nmi': val_history_nmi,
-            'train_history_acc': train_history_acc, 'val_history_acc': val_history_acc}
-    
-    
+    return {'val_history_acc': val_history_acc, 'val_history_nmi': val_history_nmi}
+
+
   def train_epoch(self, optimizer, data_loader):
     """Train the model for one epoch
 
@@ -146,9 +141,7 @@ class GMVAE:
       optimizer.step()  
 
       # save predicted and true labels
-      predicted = unlab_loss_dic['predicted_labels']
       true_labels_list.append(labels)
-      predicted_labels_list.append(predicted)   
    
       num_batches += 1. 
 
@@ -157,16 +150,8 @@ class GMVAE:
     recon_loss /= num_batches
     gauss_loss /= num_batches
     cat_loss /= num_batches
-    
-    # concat all true and predicted labels
-    true_labels = torch.cat(true_labels_list, dim=0).cpu().numpy()
-    predicted_labels = torch.cat(predicted_labels_list, dim=0).cpu().numpy()
 
-    # compute metrics
-    accuracy = 100.0 * self.metrics.cluster_acc(predicted_labels, true_labels)
-    nmi = 100.0 * self.metrics.nmi(predicted_labels, true_labels)
-
-    return total_loss, recon_loss, gauss_loss, cat_loss, accuracy, nmi
+    return total_loss, recon_loss, gauss_loss, cat_loss
 
 
   def test(self, data_loader, return_loss=False):
@@ -186,6 +171,7 @@ class GMVAE:
     cat_loss = 0.
     gauss_loss = 0.
 
+    psnr = 0.
     accuracy = 0.
     nmi = 0.
     num_batches = 0.
@@ -193,7 +179,21 @@ class GMVAE:
     true_labels_list = []
     predicted_labels_list = []
 
+    kmeans = MiniBatchKMeans(n_clusters=self.num_classes, 
+                            batch_size=self.batch_size_val,
+                            random_state=0)
+
     with torch.no_grad():
+      # Build Kmeans
+      for data, labels in data_loader:
+        if self.cuda == 1:
+          data = data.cuda()
+        data = data.view(data.size(0), -1)
+        out_net = self.network(data)
+        # samples = out_net['gaussian']
+        samples = out_net['prob_cat']
+        kmeans = kmeans.partial_fit(samples.cpu().detach().numpy())
+      # Evaluating
       for data, labels in data_loader:
         if self.cuda == 1:
           data = data.cuda()
@@ -212,10 +212,15 @@ class GMVAE:
         cat_loss += unlab_loss_dic['categorical'].item()
 
         # save predicted and true labels
-        predicted = unlab_loss_dic['predicted_labels']
+        samples = out_net['prob_cat']
+        predicted = torch.tensor(kmeans.predict(samples.cpu().detach().numpy()))
         true_labels_list.append(labels)
         predicted_labels_list.append(predicted)   
-   
+
+        # reconstruction quality
+        mse = (data - out_net['x_rec']).pow(2).mean().cpu().detach()
+        psnr = 10 * np.log10(1 / np.mean(mse.numpy())) + psnr
+
         num_batches += 1. 
 
     # average per batch
@@ -224,20 +229,21 @@ class GMVAE:
       recon_loss /= num_batches
       gauss_loss /= num_batches
       cat_loss /= num_batches
-    
+
     # concat all true and predicted labels
     true_labels = torch.cat(true_labels_list, dim=0).cpu().numpy()
     predicted_labels = torch.cat(predicted_labels_list, dim=0).cpu().numpy()
 
     # compute metrics
+    psnr /= num_batches
     accuracy = 100.0 * self.metrics.cluster_acc(predicted_labels, true_labels)
     nmi = 100.0 * self.metrics.nmi(predicted_labels, true_labels)
 
     if return_loss:
-      return total_loss, recon_loss, gauss_loss, cat_loss, accuracy, nmi
+      return total_loss, recon_loss, gauss_loss, cat_loss, psnr, accuracy, nmi
     else:
-      return accuracy, nmi
-  
+      return psnr, accuracy, nmi
+
 
   def unlabeled_loss(self, data, out_net):
     """Method defining the loss functions derived from the variational lower bound
@@ -354,7 +360,7 @@ class GMVAE:
         fig: (figure) plot of the latent space
     """
     # obtain the latent features
-    features = self.latent_features(data_loader)
+    features, labels = self.latent_features(data_loader, True)
     
     # plot only the first 2 dimensions
     fig = plt.figure(figsize=(8, 6))
@@ -362,7 +368,7 @@ class GMVAE:
             edgecolor='none', cmap=plt.cm.get_cmap('jet', 10), s = 10)
     plt.colorbar()
     if(save):
-        fig.savefig('latent_space.png')
+        fig.savefig('./result/gmvae/gmvae_latentspace_w%.3f.png' % (self.w_gauss))
     return fig
   
   

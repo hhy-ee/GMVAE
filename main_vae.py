@@ -44,7 +44,7 @@ parser.add_argument('--epochs', type=int, default=100,
                     help='number of total epochs to run (default: 200)')
 parser.add_argument('--batch_size', default=64, type=int,
                     help='mini-batch size (default: 64)')
-parser.add_argument('--batch_size_val', default=200, type=int,
+parser.add_argument('--batch_size_val', default=1024, type=int,
                     help='mini-batch size of validation (default: 200)')
 parser.add_argument('--learning_rate', default=1e-3, type=float,
                     help='learning rate (default: 0.001)')
@@ -148,7 +148,12 @@ vae = VAE(args)
 history_loss = vae.train(train_loader, val_loader)
 
 ## Testing Phase
+vae.network.load_state_dict(torch.load('./checkpoint/vae/vae_e%d_w%.3f.pkl' % (100, args.w_gauss)))
 psnr, accuracy, nmi = vae.test(test_loader)
 print("Testing phase...")
 print("PSNR %.5lf, Accuracy: %.5lf, NMI: %.5lf" % (psnr, accuracy, nmi) )
+
+## Visualization 
+# vae.plot_latent_space(test_loader, True)
+
 

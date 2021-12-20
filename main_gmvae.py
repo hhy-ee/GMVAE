@@ -44,7 +44,7 @@ parser.add_argument('--epochs', type=int, default=100,
                     help='number of total epochs to run (default: 200)')
 parser.add_argument('--batch_size', default=64, type=int,
                     help='mini-batch size (default: 64)')
-parser.add_argument('--batch_size_val', default=200, type=int,
+parser.add_argument('--batch_size_val', default=1024, type=int,
                     help='mini-batch size of validation (default: 200)')
 parser.add_argument('--learning_rate', default=1e-3, type=float,
                     help='learning rate (default: 0.001)')
@@ -78,9 +78,9 @@ parser.add_argument('--decay_temp_rate', default=0.013862944, type=float,
                     help='Temperature decay rate at every epoch (default: 0.013862944)')
 
 ## Loss function parameters
-parser.add_argument('--w_gauss', default=1, type=float,
+parser.add_argument('--w_gauss', default=1.0, type=float,
                     help='weight of gaussian loss (default: 1)')
-parser.add_argument('--w_categ', default=1, type=float,
+parser.add_argument('--w_categ', default=1.0, type=float,
                     help='weight of categorical loss (default: 1)')
 parser.add_argument('--w_rec', default=1, type=float,
                     help='weight of reconstruction loss (default: 1)')
@@ -88,7 +88,7 @@ parser.add_argument('--rec_type', type=str, choices=['bce', 'mse'],
                     default='bce', help='desired reconstruction loss function (default: bce)')
 
 ## Others
-parser.add_argument('--verbose', default=0, type=int,
+parser.add_argument('--verbose', default=1, type=int,
                     help='print extra information at every epoch.(default: 0)')
 parser.add_argument('--random_search_it', type=int, default=20,
                     help='iterations of random search (default: 20)')
@@ -145,10 +145,14 @@ print(args.input_size)
 gmvae = GMVAE(args)
 
 ## Training Phase
-history_loss = gmvae.train(train_loader, val_loader)
+# history_loss = gmvae.train(train_loader, val_loader)
 
 ## Testing Phase
-accuracy, nmi = gmvae.test(test_loader)
-print("Testing phase...")
-print("Accuracy: %.5lf, NMI: %.5lf" % (accuracy, nmi) )
+# gmvae.network.load_state_dict(torch.load('./checkpoint/gmvae/gmvae_e%d_w%.3f.pkl' % (100, args.w_gauss)))
+# psnr, accuracy, nmi = gmvae.test(test_loader)
+# print("Testing phase...")
+# print("PSNR: %.5lf, Accuracy: %.5lf, NMI: %.5lf" % (psnr, accuracy, nmi) )
+
+## Visualization 
+gmvae.plot_latent_space(test_loader, True)
 

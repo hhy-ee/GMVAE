@@ -79,7 +79,10 @@ class Gaussian(nn.Module):
   def reparameterize(self, mu, var):
     std = torch.sqrt(var + 1e-10)
     noise = torch.randn_like(std)
-    z = mu + noise * std
+    if self.training:
+      z = mu + noise * std
+    else:
+      z = mu 
     return z      
 
   def forward(self, x):

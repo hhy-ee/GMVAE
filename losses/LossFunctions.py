@@ -92,6 +92,12 @@ class LossFunctions:
       return loss.mean()
 
 
+    def kldivergence_loss(self, z, z_mu, z_var, z_mu_prior, z_var_prior):
+      loss = (torch.log(z_var_prior) - torch.log(z_var) + (z_var + (z_mu \
+          - z_mu_prior).pow(2)) / z_var_prior - 1).mul(0.5)
+      return loss.sum(1).mean()
+
+
     def entropy(self, logits, targets):
       """Entropy loss
           loss = (1/n) * -Σ targets*log(predicted)

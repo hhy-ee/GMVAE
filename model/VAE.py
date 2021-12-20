@@ -68,7 +68,7 @@ class VAE:
     for epoch in range(1, self.num_epochs + 1):
       train_loss, train_rec, train_gauss = self.train_epoch(optimizer, train_loader)
       if epoch % 20 == 0:
-        torch.save(self.network.state_dict(), ('./checkpoint/vae/vae_e%d_w%s.pkl' % (epoch, self.w_gauss)))
+        torch.save(self.network.state_dict(), ('./checkpoint/vae/vae_e%d_w%.3f.pkl' % (epoch, self.w_gauss)))
         val_loss, val_rec, val_gauss, val_psnr, val_acc, val_nmi = self.test(val_loader, True)
         if self.verbose == 1:
           print("Valid - REC: %.5lf;  Gauss: %.5lf;" % \
@@ -89,7 +89,7 @@ class VAE:
         if self.verbose == 1:
           print("Gumbel Temperature: %.3lf" % self.gumbel_temp)
 
-    return {'val_history_nmi': val_history_nmi, 'val_history_acc': val_history_acc}
+    return {'val_history_acc': val_history_acc, 'val_history_nmi': val_history_nmi}
 
 
   def train_epoch(self, optimizer, data_loader):
@@ -182,13 +182,23 @@ class VAE:
                             random_state=0)
 
     with torch.no_grad():
+      # Build Kmeans
+      for data, labels in data_loader:
+        if self.cuda == 1:
+          data = data.cuda()
+        data = data.view(data.size(0), -1)
+        out_net = self.network(data)
+        # samples = out_net['gaussian']
+        samples = out_net['gaussian']
+        kmeans = kmeans.partial_fit(samples.cpu().detach().numpy())
+      # Evaluating
       for data, labels in data_loader:
         if self.cuda == 1:
           data = data.cuda()
       
         # flatten data
         data = data.view(data.size(0), -1)
-        
+
         # forward call
         out_net = self.network(data)
         unlab_loss_dic = self.unlabeled_loss(data, out_net)  
@@ -199,8 +209,8 @@ class VAE:
         gauss_loss += unlab_loss_dic['gaussian'].item()
 
         # save predicted and true labels
-        kmeans = kmeans.partial_fit(out_net['gaussian'].cpu().detach().numpy())
-        predicted = torch.tensor(kmeans.predict(out_net['gaussian'].cpu().detach().numpy()))
+        samples = out_net['gaussian']
+        predicted = torch.tensor(kmeans.predict(samples.cpu().detach().numpy()))
         true_labels_list.append(labels)
         predicted_labels_list.append(predicted)   
 
@@ -215,13 +225,13 @@ class VAE:
       total_loss /= num_batches
       recon_loss /= num_batches
       gauss_loss /= num_batches
-      psnr /= num_batches
 
     # concat all true and predicted labels
     true_labels = torch.cat(true_labels_list, dim=0).cpu().numpy()
     predicted_labels = torch.cat(predicted_labels_list, dim=0).cpu().numpy()
 
     # compute metrics
+    psnr /= num_batches
     accuracy = 100.0 * self.metrics.cluster_acc(predicted_labels, true_labels)
     nmi = 100.0 * self.metrics.nmi(predicted_labels, true_labels)
 
@@ -248,7 +258,8 @@ class VAE:
     loss_rec = self.losses.reconstruction_loss(data, data_recon, self.rec_type)
 
     # gaussian loss
-    loss_gauss = self.losses.gaussian_loss(z, mu, var, torch.zeros_like(z), torch.ones_like(z))
+    # loss_gauss = self.losses.gaussian_loss(z, mu, var, torch.zeros_like(z), torch.ones_like(z))
+    loss_gauss = self.losses.kldivergence_loss(z, mu, var, torch.zeros_like(z), torch.ones_like(z))
 
     # total loss
     loss_total = self.w_rec * loss_rec + self.w_gauss * loss_gauss
@@ -257,7 +268,7 @@ class VAE:
                 'reconstruction': loss_rec,
                 'gaussian': loss_gauss}
     return loss_dic
-    
+
 
   def latent_features(self, data_loader, return_labels=False):
     """Obtain latent features learnt by the model
@@ -281,7 +292,7 @@ class VAE:
           data = data.cuda()
         # flatten data
         data = data.view(data.size(0), -1)  
-        out = self.network.inference(data, self.gumbel_temp, self.hard_gumbel)
+        out = self.network.inference(data)
         latent_feat = out['mean']
         end_ind = min(start_ind + data.size(0), N+1)
 
@@ -336,7 +347,7 @@ class VAE:
         fig: (figure) plot of the latent space
     """
     # obtain the latent features
-    features = self.latent_features(data_loader)
+    features, labels = self.latent_features(data_loader, True)
     
     # plot only the first 2 dimensions
     fig = plt.figure(figsize=(8, 6))
@@ -344,7 +355,7 @@ class VAE:
             edgecolor='none', cmap=plt.cm.get_cmap('jet', 10), s = 10)
     plt.colorbar()
     if(save):
-        fig.savefig('latent_space.png')
+        fig.savefig('./result/vae/vae_latentspace_w%.3f.png' % (self.w_gauss))
     return fig
   
   
