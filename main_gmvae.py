@@ -145,13 +145,13 @@ print(args.input_size)
 gmvae = GMVAE(args)
 
 ## Training Phase
-# history_loss = gmvae.train(train_loader, val_loader)
+history_loss = gmvae.train(train_loader, val_loader)
 
 ## Testing Phase
-# gmvae.network.load_state_dict(torch.load('./checkpoint/gmvae/gmvae_e%d_w%.3f.pkl' % (100, args.w_gauss)))
-# psnr, accuracy, nmi = gmvae.test(test_loader)
-# print("Testing phase...")
-# print("PSNR: %.5lf, Accuracy: %.5lf, NMI: %.5lf" % (psnr, accuracy, nmi) )
+gmvae.network.load_state_dict(torch.load('./checkpoint/gmvae/gmvae_e%d_w%.3f.pkl' % (100, args.w_gauss)))
+psnr, accuracy, nmi = gmvae.test(test_loader)
+print("Testing phase...")
+print("PSNR: %.5lf, Accuracy: %.5lf, NMI: %.5lf" % (psnr, accuracy, nmi) )
 
 ## Visualization 
 gmvae.plot_latent_space(test_loader, True)

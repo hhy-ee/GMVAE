@@ -148,7 +148,7 @@ vae = VAE(args)
 history_loss = vae.train(train_loader, val_loader)
 
 ## Testing Phase
-vae.network.load_state_dict(torch.load('./checkpoint/vae/vae_e%d_w%.3f.pkl' % (100, args.w_gauss)))
+vae.network.load_state_dict(torch.load('./checkpoint/vae_kl/vae_e%d_w%.3f.pkl' % (100, args.w_gauss)))
 psnr, accuracy, nmi = vae.test(test_loader)
 print("Testing phase...")
 print("PSNR %.5lf, Accuracy: %.5lf, NMI: %.5lf" % (psnr, accuracy, nmi) )

@@ -68,7 +68,7 @@ class VAE:
     for epoch in range(1, self.num_epochs + 1):
       train_loss, train_rec, train_gauss = self.train_epoch(optimizer, train_loader)
       if epoch % 20 == 0:
-        torch.save(self.network.state_dict(), ('./checkpoint/vae/vae_e%d_w%.3f.pkl' % (epoch, self.w_gauss)))
+        torch.save(self.network.state_dict(), ('./checkpoint/vae_kl/vae_e%d_w%.3f.pkl' % (epoch, self.w_gauss)))
         val_loss, val_rec, val_gauss, val_psnr, val_acc, val_nmi = self.test(val_loader, True)
         if self.verbose == 1:
           print("Valid - REC: %.5lf;  Gauss: %.5lf;" % \
